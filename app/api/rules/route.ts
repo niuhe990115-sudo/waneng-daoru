@@ -25,10 +25,25 @@ export async function GET() {
     .order('created_at', { ascending: false });
 
   if (error) {
+    console.error('[API/规则查询] Supabase 错误:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  return NextResponse.json({ rules: data, demo: false });
+  // 转换字段名为驼峰格式以适配前端
+  const rules = data.map(rule => ({
+    id: rule.id,
+    name: rule.name,
+    description: rule.description,
+    fileFormat: rule.file_format,
+    fieldMappings: typeof rule.field_mappings === 'string' ? JSON.parse(rule.field_mappings) : rule.field_mappings,
+    regionRules: typeof rule.region_rules === 'string' ? JSON.parse(rule.region_rules) : rule.region_rules,
+    aggregationRule: rule.aggregation_rule ? (typeof rule.aggregation_rule === 'string' ? JSON.parse(rule.aggregation_rule) : rule.aggregation_rule) : null,
+    transposeRule: rule.transpose_rule ? (typeof rule.transpose_rule === 'string' ? JSON.parse(rule.transpose_rule) : rule.transpose_rule) : null,
+    splitRule: rule.split_rule ? (typeof rule.split_rule === 'string' ? JSON.parse(rule.split_rule) : rule.split_rule) : null,
+    created_at: rule.created_at,
+  }));
+
+  return NextResponse.json({ rules, demo: false });
 }
 
 export async function POST(req: NextRequest) {
@@ -52,21 +67,39 @@ export async function POST(req: NextRequest) {
   }
 
   const rule = await req.json();
+  console.log('[API/规则保存] 接收到的规则数据:', JSON.stringify(rule, null, 2));
+  
   const { data, error } = await supabase!
     .from('parse_rules')
-    .insert([{ ...rule, created_at: new Date().toISOString() }])
+    .insert([{
+      name: rule.name,
+      description: rule.description || '',
+      file_format: rule.fileFormat || rule.file_format || 'excel',
+      field_mappings: JSON.stringify(rule.fieldMappings || []),
+      region_rules: JSON.stringify(rule.regionRules || []),
+      aggregation_rule: rule.aggregationRule ? JSON.stringify(rule.aggregationRule) : null,
+      transpose_rule: rule.transposeRule ? JSON.stringify(rule.transposeRule) : null,
+      split_rule: rule.splitRule ? JSON.stringify(rule.splitRule) : null,
+    }])
     .select()
     .single();
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    console.error('[API/规则保存] Supabase 错误:', error);
+    return NextResponse.json({ error: error.message, details: error }, { status: 500 });
   }
 
+  console.log('[API/规则保存] 保存成功:', data.id);
   return NextResponse.json({ success: true, rule: data });
 }
 
 export async function DELETE(req: NextRequest) {
   if (!isSupabaseConfigured()) {
+    // 演示模式：从内存删除
+    const { id } = await req.json();
+    const rules = initializeDemoRules();
+    demoRules = rules.filter(r => r.id !== id);
+    console.log('[演示模式] 规则已从内存删除:', id);
     return NextResponse.json({ success: true, demo: true });
   }
 

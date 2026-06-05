@@ -76,15 +76,25 @@ function getCell(data: string[][], row: number, col: number): string {
 }
 
 // 收集尾部横向信息区（收货人散落在文件末尾的情况）
-function extractTailRecipients(data: string[][], rule: ParseRule): { name: string; phone: string; address: string } {
-  const result = { name: '', phone: '', address: '' };
+function extractTailRecipients(data: string[][], rule: ParseRule): { name: string; phone: string; address: string; externalCode: string; storeName: string } {
+  const result = { name: '', phone: '', address: '', externalCode: '', storeName: '' };
   
   for (const reg of rule.regionRules) {
     if (reg.type === 'tail横向提取') {
-      const rowsFromEnd = reg.rowsFromEnd || 3;
+      // 强制扩大搜索范围：至少搜索最后15行，确保能覆盖到底部信息
+      const rowsFromEnd = Math.max(reg.rowsFromEnd || 1, 15);
       const startRow = Math.max(0, data.length - rowsFromEnd);
       
-      console.log(`[尾部提取] 从倒数第 ${rowsFromEnd} 行开始搜索 (第${startRow}行到第${data.length - 1}行)`);
+      console.log(`[尾部提取] 搜索范围: 第${startRow}行 到 第${data.length - 1}行 (共${data.length}行)`);
+      
+      // 打印尾部区域的原始数据（调试用）
+      console.log(`[尾部提取] 尾部区域数据预览:`);
+      for (let r = startRow; r < data.length; r++) {
+        const row = data[r];
+        if (row && row.some(cell => cell && String(cell).trim())) {
+          console.log(`  第${r}行:`, row.slice(0, 15)); // 只显示前15列
+        }
+      }
       
       // 方法1：从字段映射中找收件人相关字段
       for (const mapping of rule.fieldMappings) {
@@ -95,10 +105,13 @@ function extractTailRecipients(data: string[][], rule: ParseRule): { name: strin
           // 在尾部区域搜索这个字段
           for (let r = startRow; r < data.length; r++) {
             for (let c = 0; c < data[r].length; c++) {
-              const cell = trim(data[r][c]).toLowerCase();
-              if (cell.includes(source.toLowerCase()) || cell.includes('收货人') || cell.includes('收件人')) {
-                // 找到了字段名，值在下一列或右边
-                result.name = trim(data[r][c + 1]) || trim(data[r][c + 2]) || '';
+              const cell = trim(data[r][c]);
+              const cellLower = cell.toLowerCase();
+              // 支持格式: "收货人: 张锦峰" 或 "收货人 张锦峰"
+              if (cellLower.includes('收货人') || cellLower.includes('收件人')) {
+                // 提取值：可能是同一单元格的后面部分，或右边单元格
+                const afterColon = cell.split(/[:：]/).slice(1).join('').trim();
+                result.name = afterColon || trim(data[r][c + 1]) || trim(data[r][c + 2]) || '';
                 console.log(`[尾部提取] 找到收件人姓名: "${result.name}" (第${r}行第${c}列)`);
                 break;
               }
@@ -110,9 +123,11 @@ function extractTailRecipients(data: string[][], rule: ParseRule): { name: strin
         if (target === 'recipientPhone' || target === '收件人电话') {
           for (let r = startRow; r < data.length; r++) {
             for (let c = 0; c < data[r].length; c++) {
-              const cell = trim(data[r][c]).toLowerCase();
-              if (cell.includes(source.toLowerCase()) || cell.includes('电话') || cell.includes('手机') || cell.includes('联系')) {
-                result.phone = trim(data[r][c + 1]) || trim(data[r][c + 2]) || '';
+              const cell = trim(data[r][c]);
+              const cellLower = cell.toLowerCase();
+              if (cellLower.includes('收货电话') || cellLower.includes('收货手机') || cellLower.includes('联系电话')) {
+                const afterColon = cell.split(/[:：]/).slice(1).join('').trim();
+                result.phone = afterColon || trim(data[r][c + 1]) || trim(data[r][c + 2]) || '';
                 console.log(`[尾部提取] 找到收件人电话: "${result.phone}" (第${r}行第${c}列)`);
                 break;
               }
@@ -124,9 +139,11 @@ function extractTailRecipients(data: string[][], rule: ParseRule): { name: strin
         if (target === 'recipientAddress' || target === '收件人地址') {
           for (let r = startRow; r < data.length; r++) {
             for (let c = 0; c < data[r].length; c++) {
-              const cell = trim(data[r][c]).toLowerCase();
-              if (cell.includes(source.toLowerCase()) || cell.includes('地址')) {
-                result.address = trim(data[r][c + 1]) || trim(data[r][c + 2]) || '';
+              const cell = trim(data[r][c]);
+              const cellLower = cell.toLowerCase();
+              if (cellLower.includes('收货地址') || cellLower.includes('地址')) {
+                const afterColon = cell.split(/[:：]/).slice(1).join('').trim();
+                result.address = afterColon || trim(data[r][c + 1]) || trim(data[r][c + 2]) || '';
                 console.log(`[尾部提取] 找到收件人地址: "${result.address}" (第${r}行第${c}列)`);
                 break;
               }
@@ -134,22 +151,82 @@ function extractTailRecipients(data: string[][], rule: ParseRule): { name: strin
             if (result.address) break;
           }
         }
+        
+        // 新增：提取单据号
+        if (target === 'externalCode' || target === '外部编码' || target === '配送单号') {
+          for (let r = startRow; r < data.length; r++) {
+            for (let c = 0; c < data[r].length; c++) {
+              const cell = trim(data[r][c]);
+              const cellLower = cell.toLowerCase();
+              if (cellLower.includes('单据号') || cellLower.includes('单号') || cellLower.includes('配送单号')) {
+                const afterColon = cell.split(/[:：]/).slice(1).join('').trim();
+                result.externalCode = afterColon || trim(data[r][c + 1]) || trim(data[r][c + 2]) || '';
+                console.log(`[尾部提取] 找到单据号: "${result.externalCode}" (第${r}行第${c}列)`);
+                break;
+              }
+            }
+            if (result.externalCode) break;
+          }
+        }
+        
+        // 新增：提取收货机构/门店
+        if (target === 'storeName' || target === '收货门店' || target === '收货机构') {
+          for (let r = startRow; r < data.length; r++) {
+            for (let c = 0; c < data[r].length; c++) {
+              const cell = trim(data[r][c]);
+              const cellLower = cell.toLowerCase();
+              if (cellLower.includes('收货机构') || cellLower.includes('收货门店') || cellLower.includes('机构')) {
+                const afterColon = cell.split(/[:：]/).slice(1).join('').trim();
+                result.storeName = afterColon || trim(data[r][c + 1]) || trim(data[r][c + 2]) || '';
+                console.log(`[尾部提取] 找到收货机构: "${result.storeName}" (第${r}行第${c}列)`);
+                break;
+              }
+            }
+            if (result.storeName) break;
+          }
+        }
       }
       
-      // 方法2：如果字段映射没找到，用关键词搜索
-      if (!result.name || !result.phone) {
+      // 方法2：如果字段映射没找到，用关键词搜索（更强大的正则表达式）
+      if (!result.name || !result.phone || !result.externalCode) {
+        console.log(`[尾部提取] 方法1未完全找到，尝试方法2（关键词+正则）`);
+        
         for (let r = startRow; r < data.length; r++) {
           for (let c = 0; c < data[r].length; c++) {
             const cell = trim(data[r][c]);
+            const cellLower = cell.toLowerCase();
+            
             // 手机号匹配（11位数字）
             if (/1[3-9]\d{9}/.test(cell) && !result.phone) {
               result.phone = cell;
               console.log(`[尾部提取] 找到手机号: "${result.phone}" (第${r}行第${c}列)`);
             }
-            // 收货人/收件人关键词
-            if ((cell.includes('收货人') || cell.includes('收件人')) && !result.name) {
-              result.name = trim(data[r][c + 1]) || trim(data[r][c + 2]) || cell.replace(/[收货人收件人：:]/g, '');
-              console.log(`[尾部提取] 找到收货人: "${result.name}" (第${r}行第${c}列)`);
+            
+            // 收货人匹配（支持多种格式）
+            if (!result.name) {
+              const nameMatch = cell.match(/[收受]货[人客]|收件[人客][：:]\s*([^,，;；\n]+)/);
+              if (nameMatch) {
+                result.name = nameMatch[1].trim();
+                console.log(`[尾部提取] 找到收货人: "${result.name}" (第${r}行第${c}列)`);
+              }
+            }
+            
+            // 单据号匹配
+            if (!result.externalCode) {
+              const codeMatch = cell.match(/(单据|配送|运|订)[单号][：:]\s*([^,，;；\n]+)/i);
+              if (codeMatch) {
+                result.externalCode = codeMatch[2].trim();
+                console.log(`[尾部提取] 找到单据号: "${result.externalCode}" (第${r}行第${c}列)`);
+              }
+            }
+            
+            // 收货机构匹配
+            if (!result.storeName) {
+              const storeMatch = cell.match(/(收货|门店|机构|配送中心)[：:]\s*([^,，;；\n]+)/i);
+              if (storeMatch && !storeMatch[0].includes('备注')) {
+                result.storeName = storeMatch[2].trim();
+                console.log(`[尾部提取] 找到收货机构: "${result.storeName}" (第${r}行第${c}列)`);
+              }
             }
           }
         }
@@ -159,7 +236,7 @@ function extractTailRecipients(data: string[][], rule: ParseRule): { name: strin
     }
   }
   
-  console.log(`[尾部提取] 最终结果: 姓名="${result.name}", 电话="${result.phone}", 地址="${result.address}"`);
+  console.log(`[尾部提取] 最终结果: 姓名="${result.name}", 电话="${result.phone}", 地址="${result.address}", 单据号="${result.externalCode}", 机构="${result.storeName}"`);
   return result;
 }
 
@@ -179,16 +256,22 @@ function applyRuleToSheet(sheetData: string[][], rule: ParseRule): Order[] {
     }
   }
   
-  // 智能检测：在前10行中查找最可能是表头的行
+  // 智能检测：在更大范围内查找最可能是表头的行
   // 表头特征：包含多个与 fieldMappings 中 sourceField 匹配的列名
   console.log('[Excel解析] 开始智能检测表头行...');
   let bestHeaderRow = dataStartRow;
   let bestMatchScore = 0;
   
-  const searchRows = Math.min(10, sheetData.length);
-  for (let r = 0; r < searchRows; r++) {
+  // 扩大搜索范围：从第0行到第40行，或者从dataStartRow-5开始
+  const searchStart = Math.max(0, dataStartRow - 10); // 允许向前搜索10行
+  const searchEnd = Math.min(40, sheetData.length);
+  
+  console.log(`[Excel解析] 搜索范围: 第${searchStart}行 到 第${searchEnd}行 (dataStartRow=${dataStartRow})`);
+  
+  for (let r = searchStart; r < searchEnd; r++) {
     let matchScore = 0;
     const row = sheetData[r];
+    const matchedFields: string[] = [];
     
     for (const mapping of rule.fieldMappings) {
       const src = trim(mapping.sourceField).toLowerCase();
@@ -203,17 +286,23 @@ function applyRuleToSheet(sheetData: string[][], rule: ParseRule): Order[] {
         if (cell === src || 
             (cell.includes(src) && src.includes(cell) && cell.length > 2)) {
           matchScore++;
+          matchedFields.push(src);
           break;
         }
       }
     }
     
-    console.log(`[Excel解析] 第${r}行匹配得分: ${matchScore}/${rule.fieldMappings.length}`);
+    console.log(`[Excel解析] 第${r}行匹配得分: ${matchScore}/${rule.fieldMappings.length}, 匹配字段: [${matchedFields.join(', ')}]`);
     
-    // 如果这一行匹配了超过一半的字段，认为是表头行
-    if (matchScore > bestMatchScore && matchScore >= rule.fieldMappings.length * 0.5) {
+    // 关键优化：表头行必须满足以下条件之一
+    // 1. 匹配了至少 2/3 的字段（严格标准）
+    // 2. 或者匹配了至少3个字段（适用于字段较少的规则）
+    const minRequired = Math.max(3, Math.floor(rule.fieldMappings.length * 0.66));
+    
+    if (matchScore > bestMatchScore && matchScore >= minRequired) {
       bestMatchScore = matchScore;
       bestHeaderRow = r;
+      console.log(`[Excel解析]    更新最佳表头: 第${r}行 (匹配${matchScore}个字段)`);
     }
   }
   
@@ -341,6 +430,28 @@ function applyRuleToSheet(sheetData: string[][], rule: ParseRule): Order[] {
       console.log(`[解析第${r}行] 检测到表头行（匹配${matchCount}/${rule.fieldMappings.length}个字段），跳过`);
       continue;
     }
+    
+    // 新增：对于卡片式布局，如果这一行只包含 1-2 个字段名（散落的说明），也应该跳过
+    // 例如：第5行的“调入门店”、“收货人”、“电话”等
+    if (matchCount >= 1 && matchCount < headerThreshold) {
+      // 检查这一行是否有实质性的数据（非表头名称的内容）
+      const hasRealData = rule.fieldMappings.some(mapping => {
+        const target = mapping.targetField;
+        const colIdx = colMap[target];
+        if (colIdx >= 0 && colIdx < sheetData[r].length) {
+          const cellValue = trim(sheetData[r][colIdx]);
+          const sourceFieldLower = trim(mapping.sourceField).toLowerCase();
+          // 如果单元格内容不是表头名称，且有实际内容，则认为是数据行
+          return cellValue && !cellValue.toLowerCase().includes(sourceFieldLower);
+        }
+        return false;
+      });
+      
+      if (!hasRealData) {
+        console.log(`[解析第${r}行] 检测到散落的字段说明（匹配${matchCount}个字段），跳过`);
+        continue;
+      }
+    }
 
     // 提取行数据
     const sku编码 = colMap['SKU物品编码'] >= 0 ? getCell(sheetData, r, colMap['SKU物品编码']) : getCell(sheetData, r, 0);
@@ -351,17 +462,38 @@ function applyRuleToSheet(sheetData: string[][], rule: ParseRule): Order[] {
     const sku规格 = colMap['SKU规格型号'] >= 0 ? getCell(sheetData, r, colMap['SKU规格型号']) : '';
 
     // 收货人信息（支持两种字段名格式）
+    // 注意：如果规则包含 tail横向提取，说明单据号和收货人在底部，应该优先使用尾部提取的结果
+    const hasTailExtraction = rule.regionRules.some(r => r.type === 'tail横向提取');
+    
     const recipientNameCol = colMap['recipientName'] ?? colMap['收件人姓名'] ?? -1;
     const recipientPhoneCol = colMap['recipientPhone'] ?? colMap['收件人电话'] ?? -1;
     const recipientAddressCol = colMap['recipientAddress'] ?? colMap['收件人地址'] ?? -1;
     const storeNameCol = colMap['storeName'] ?? colMap['收货门店'] ?? -1;
     const externalCodeCol = colMap['externalCode'] ?? colMap['外部编码'] ?? colMap['配送单号'] ?? -1;
     
-    const recipientName = recipientNameCol >= 0 ? getCell(sheetData, r, recipientNameCol) : tailRecipient.name;
-    const recipientPhone = recipientPhoneCol >= 0 ? getCell(sheetData, r, recipientPhoneCol) : tailRecipient.phone;
-    const recipientAddress = recipientAddressCol >= 0 ? getCell(sheetData, r, recipientAddressCol) : tailRecipient.address;
-    const storeName = storeNameCol >= 0 ? getCell(sheetData, r, storeNameCol) : '';
-    const externalCode = externalCodeCol >= 0 ? getCell(sheetData, r, externalCodeCol) : '';
+    // 如果有尾部提取规则，优先使用尾部提取的结果
+    let recipientName = tailRecipient.name;
+    let recipientPhone = tailRecipient.phone;
+    let recipientAddress = tailRecipient.address;
+    let storeName = tailRecipient.storeName;
+    let externalCode = tailRecipient.externalCode;
+    
+    // 只有当尾部没提取到，才尝试从列中读取
+    if (!hasTailExtraction || !recipientName) {
+      recipientName = recipientNameCol >= 0 ? getCell(sheetData, r, recipientNameCol) : recipientName;
+    }
+    if (!hasTailExtraction || !recipientPhone) {
+      recipientPhone = recipientPhoneCol >= 0 ? getCell(sheetData, r, recipientPhoneCol) : recipientPhone;
+    }
+    if (!hasTailExtraction || !recipientAddress) {
+      recipientAddress = recipientAddressCol >= 0 ? getCell(sheetData, r, recipientAddressCol) : recipientAddress;
+    }
+    if (!hasTailExtraction || !storeName) {
+      storeName = storeNameCol >= 0 ? getCell(sheetData, r, storeNameCol) : storeName;
+    }
+    if (!hasTailExtraction || !externalCode) {
+      externalCode = externalCodeCol >= 0 ? getCell(sheetData, r, externalCodeCol) : externalCode;
+    }
     
     console.log(`[解析第${r}行] externalCode="${externalCode}", storeName="${storeName}", recipientName="${recipientName}", recipientPhone="${recipientPhone}"`);
 

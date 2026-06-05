@@ -17,7 +17,8 @@ export async function GET(req: NextRequest) {
     if (search) {
       filteredOrders = demoOrders.filter(o => 
         (o.external_code || '').includes(search) || 
-        (o.recipient_name || '').includes(search)
+        (o.recipient_name || '').includes(search) ||
+        (o.recipient_phone || '').includes(search)
       );
     }
     
@@ -56,7 +57,7 @@ export async function GET(req: NextRequest) {
     .range(offset, offset + limit - 1);
 
   if (search) {
-    query = query.or(`external_code.ilike.%${search}%,recipient_name.ilike.%${search}%`);
+    query = query.or(`external_code.ilike.%${search}%,recipient_name.ilike.%${search}%,recipient_phone.ilike.%${search}%`);
   }
 
   const { data, error, count } = await query;

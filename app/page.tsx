@@ -181,6 +181,18 @@ export default function WanengDaoruPage() {
     loadHistory();
   }, [loadRules, loadHistory]);
 
+  // 防抖搜索（手机号/外部编码）
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setHistoryPage(1); // 重置到第一页
+      loadHistory(1, debouncedSearch);
+    }, 300); // 300ms 防抖
+    
+    return () => clearTimeout(timer);
+  }, [debouncedSearch, loadHistory]);
+
   // --- 文件上传处理 ---
   const handleFile = useCallback(async (file: File) => {
     const ext = getFileType(file.name);
@@ -560,6 +572,33 @@ export default function WanengDaoruPage() {
     }
   }, [editingRule, loadRules]);
 
+  // --- 规则删除 ---
+  const handleDeleteRule = useCallback(async (ruleId: string, ruleName: string) => {
+    if (!confirm(`确定要删除规则「${ruleName}」吗？`)) {
+      return;
+    }
+    try {
+      const res = await fetch('/api/rules', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: ruleId }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        toast.success('规则已删除');
+        loadRules();
+        // 如果删除的是当前选中的规则，清空选择
+        if (selectedRuleId === ruleId) {
+          setSelectedRuleId('');
+        }
+      } else {
+        toast.error(data.error || '删除失败');
+      }
+    } catch {
+      toast.error('删除失败');
+    }
+  }, [selectedRuleId, loadRules]);
+
   // 重置
   const handleReset = useCallback(() => {
     setImportStep('upload');
@@ -838,7 +877,7 @@ export default function WanengDaoruPage() {
                     <div style={{ overflowX: 'auto', marginTop: 12 }}>
                       <div style={{ fontSize: 12, color: '#86909c', marginBottom: 6 }}>
                         数据预览（前10行）
-                        {fileContent.some(row => row[0]?.startsWith('--- 工作表:')) && (
+                        {fileContent.some(row => row[0] && String(row[0]).startsWith('--- 工作表:')) && (
                           <span style={{ marginLeft: 8, color: '#1890ff', fontWeight: 600 }}>
                             · 多工作表文件
                           </span>
@@ -933,8 +972,30 @@ export default function WanengDaoruPage() {
                             border: `2px solid ${selectedRuleId === rule.id ? '#0fc6c2' : '#e5e6eb'}`,
                             background: selectedRuleId === rule.id ? '#e8fafa' : '#fafbfc',
                             cursor: 'pointer', transition: 'all 0.2s',
+                            position: 'relative',
                           }}
                         >
+                          {/* 删除按钮 */}
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDeleteRule(rule.id, rule.name);
+                            }}
+                            style={{
+                              position: 'absolute', top: 8, right: 8,
+                              padding: 4, borderRadius: 4,
+                              border: 'none', background: 'transparent',
+                              cursor: 'pointer', color: '#cf1322',
+                              opacity: 0.6,
+                              transition: 'opacity 0.2s',
+                            }}
+                            onMouseEnter={(e) => e.currentTarget.style.opacity = '1'}
+                            onMouseLeave={(e) => e.currentTarget.style.opacity = '0.6'}
+                            title="删除规则"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                          
                           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
                             <div style={{
                               width: 8, height: 8, borderRadius: '50%',
@@ -1379,19 +1440,33 @@ export default function WanengDaoruPage() {
                 <div style={{ position: 'relative' }}>
                   <Search size={14} style={{ position: 'absolute', left: 10, top: 10, color: '#86909c' }} />
                   <input
-                    placeholder="搜索外部编码/收件人..."
-                    value={historySearch}
-                    onChange={e => setHistorySearch(e.target.value)}
-                    onKeyDown={e => e.key === 'Enter' && loadHistory(1, historySearch)}
+                    placeholder="搜索外部编码/收件人/手机号..."
+                    value={debouncedSearch}
+                    onChange={e => setDebouncedSearch(e.target.value)}
                     style={{
                       padding: '8px 12px 8px 32px', borderRadius: 8,
-                      border: '1px solid #e5e6eb', fontSize: 13, width: 220,
+                      border: '1px solid #e5e6eb', fontSize: 13, width: 260,
                       outline: 'none',
                     }}
                   />
+                  {debouncedSearch && (
+                    <button
+                      onClick={() => setDebouncedSearch('')}
+                      style={{
+                        position: 'absolute', right: 8, top: 8,
+                        padding: 2, background: 'transparent', border: 'none',
+                        cursor: 'pointer', color: '#86909c',
+                      }}
+                    >
+                      <X size={14} />
+                    </button>
+                  )}
                 </div>
                 <button
-                  onClick={() => loadHistory(1, historySearch)}
+                  onClick={() => {
+                    setHistoryPage(1);
+                    loadHistory(1, debouncedSearch);
+                  }}
                   style={{
                     padding: '8px 16px', borderRadius: 8,
                     background: 'linear-gradient(135deg, #0fc6c2, #0bada9)',
@@ -1401,7 +1476,7 @@ export default function WanengDaoruPage() {
                   搜索
                 </button>
                 <button
-                  onClick={() => loadHistory(historyPage, historySearch)}
+                  onClick={() => loadHistory(historyPage, debouncedSearch)}
                   style={{
                     padding: '8px 16px', borderRadius: 8,
                     border: '1px solid #e5e6eb', background: '#fff',
