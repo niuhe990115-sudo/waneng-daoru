@@ -829,7 +829,8 @@ export default function WanengDaoruPage() {
                       {aiSuggestedRule && (
                         <button
                           onClick={() => {
-                            const ruleText = `【AI 生成的规则详情】\n\n名称：${aiSuggestedRule.name}\n描述：${aiSuggestedRule.description || '无'}\n\n【字段映射】\n${(aiSuggestedRule.fieldMappings || []).map((m: any) => `${m.sourceField} -> ${m.targetField}`).join('\n')}\n\n【区域规则】\n${(aiSuggestedRule.regionRules || []).map((r: any) => `${r.type}: ${r.description || ''}`).join('\n')}\n\n【聚合规则】\n${aiSuggestedRule.aggregationRule ? JSON.stringify(aiSuggestedRule.aggregationRule, null, 2) : '无'}\n\n【完整 JSON】\n${JSON.stringify(aiSuggestedRule, null, 2)}`;
+                            console.log('【完整AI规则JSON】', JSON.stringify(aiSuggestedRule, null, 2));
+                            const ruleText = `【AI 生成的规则详情】\n\n名称：${aiSuggestedRule.name}\n描述：${aiSuggestedRule.description || '无'}\n\n【字段映射】\n${(aiSuggestedRule.fieldMappings || []).map((m: any) => `${m.sourceField} -> ${m.targetField}${(m as any).layoutType ? ' [layoutType: ' + (m as any).layoutType + ']' : ''}`).join('\n')}\n\n【区域规则】\n${(aiSuggestedRule.regionRules || []).map((r: any) => `${r.type}: ${r.description || ''}`).join('\n')}\n\n【聚合规则】\n${aiSuggestedRule.aggregationRule ? JSON.stringify(aiSuggestedRule.aggregationRule, null, 2) : '无'}\n\n【完整 JSON 已输出到控制台】`;
                             alert(ruleText);
                           }}
                           style={{
