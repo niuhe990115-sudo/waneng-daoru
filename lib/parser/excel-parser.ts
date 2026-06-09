@@ -1161,6 +1161,23 @@ function applySingleCardParsing(
     externalCodeCol = colMap['SKU物品编码'];
   }
   
+  // 如果仍然找不到，智能扫描表头行，找到最可能是externalCode的列
+  if (externalCodeCol < 0) {
+    console.log('[单卡片解析] 仍未找到externalCode列，智能扫描表头...');
+    const headerRow = sheetData[dataStartRow];
+    if (headerRow) {
+      for (let c = 0; c < headerRow.length; c++) {
+        const headerCell = trim(headerRow[c]).toLowerCase();
+        // 查找包含"编码"、"单号"、"订单"等关键词的列
+        if (/编码|单号|订单|配送|运单|物品编码/.test(headerCell)) {
+          externalCodeCol = c;
+          console.log(`[单卡片解析] 智能找到externalCode列: 第${c}列 "${headerRow[c]}"`);
+          break;
+        }
+      }
+    }
+  }
+  
   console.log(`[单卡片解析] externalCodeCol=${externalCodeCol}`);
   
   for (let r = dataStartRow + 1; r < sheetData.length; r++) {
